@@ -91,6 +91,8 @@ pub mod firehose;
 pub mod inspector;
 #[cfg(feature = "iot")]
 pub mod iot;
+#[cfg(feature = "iot-data")]
+pub mod iotdata;
 #[cfg(feature = "kinesis")]
 pub mod kinesis;
 #[cfg(feature = "kms")]

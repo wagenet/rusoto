@@ -2,6 +2,7 @@ use inflector::Inflector;
 
 use botocore::{Service, Shape, ShapeType, Operation};
 use std::ascii::AsciiExt;
+use std::collections::HashSet;
 use self::ec2::Ec2Generator;
 use self::json::JsonGenerator;
 use self::query::QueryGenerator;
@@ -138,13 +139,27 @@ fn generate_primitive_type(name: &str, shape_type: ShapeType, for_timestamps: &s
 
 fn generate_types<P>(service: &Service, protocol_generator: &P) -> String
 where P: GenerateProtocol {
-    service.shapes.iter().filter_map(|(name, shape)| {
-        let type_name = &capitalize_first(name.to_string());
 
+    // some service definitions have duplicate type name definitions
+    // work around that until the bugs are fixed upstream in botocore
+    let mut types_generated = HashSet::new();
+
+    service.shapes.iter().filter_map(|(name, shape)| {
+        let type_name = capitalize_first(name.to_string());
+
+        // don't generate duplicates
+        if types_generated.contains(&type_name){
+            return None;        
+        }
+        types_generated.insert(type_name.to_owned());
+
+        // don't generate a type alias for String since it's a native type
+        // but do still generate support types to parse it out of the JSON/XML/etc.
         if type_name == "String" {
             return protocol_generator.generate_support_types(&type_name, shape, &service);
         }
 
+        // we generate our own error enums, so don't generate the exception types
         if shape.exception() {
             return None;
         }
@@ -156,13 +171,13 @@ where P: GenerateProtocol {
         }
 
         match shape.shape_type {
-            ShapeType::Structure => parts.push(generate_struct(service, type_name, shape, protocol_generator)),
-            ShapeType::Map => parts.push(generate_map(type_name, shape)),
-            ShapeType::List => parts.push(generate_list(type_name, shape)),
-            shape_type => parts.push(generate_primitive_type(type_name, shape_type, protocol_generator.timestamp_type())),
+            ShapeType::Structure => parts.push(generate_struct(service, &type_name, shape, protocol_generator)),
+            ShapeType::Map => parts.push(generate_map(&type_name, shape)),
+            ShapeType::List => parts.push(generate_list(&type_name, shape)),
+            shape_type => parts.push(generate_primitive_type(&type_name, shape_type, protocol_generator.timestamp_type())),
         }
 
-        if let Some(support_types) = protocol_generator.generate_support_types(type_name, shape, &service) {
+        if let Some(support_types) = protocol_generator.generate_support_types(&type_name, shape, &service) {
             parts.push(support_types);
         }
 
